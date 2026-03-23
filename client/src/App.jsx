@@ -1,176 +1,170 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
-import { useRef } from "react";
-import { useEffect } from "react";
 
-const socket = io("http://192.168.31.59:3000", {
-    transports: ["websocket"], // helps avoid CORS issues
-    secure: true,
-});
+const socket = io("http://localhost:3000");
 
 const App = () => {
-    let myVideoRef = useRef(null);
-    let remoteVideoRef = useRef(null);
-    let roomId = "123";
-    let localStream = useRef(null);
-    let remoteStream = useRef(new MediaStream());
-    let peerConnection = useRef(null);
-    let servers = {
-        iceServers: [
-            {
-                urls: [
-                    "stun:stun1.l.google.com:19302",
-                    "stun:stun2.l.google.com:19302",
-                ],
-            },
-        ],
+    const localVideoRef = useRef(null);
+    const remoteVideoRef = useRef(null);
+
+    const localStream = useRef(null);
+    const remoteStream = useRef(null);
+    const peerConnection = useRef(null);
+
+    const [myId, setMyId] = useState("");
+    const [callTo, setCallTo] = useState("");
+
+    const servers = {
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     };
 
-    // LOCAL VIDEO INITIALISATION
+    // Get local video
     useEffect(() => {
-        let init = async () => {
+        const init = async () => {
             localStream.current = await navigator.mediaDevices.getUserMedia({
                 video: true,
                 audio: true,
             });
-            if (myVideoRef.current) {
-                myVideoRef.current.srcObject = localStream.current;
-            }
+
+            localVideoRef.current.srcObject = localStream.current;
         };
+
         init();
     }, []);
 
-    // USE EFFECT FOR SOCKET EVENTS
+    // Socket events
     useEffect(() => {
-        socket.on("connect", () => {
-            console.log("Socket Connected");
+        socket.on("me", (id) => {
+            console.log("My ID:", id);
+            setMyId(id);
         });
 
-        // JOIN ROOM
-        socket.emit("join-room", roomId);
+        socket.on("offer", async ({ from, offer }) => {
+            console.log("Incoming Offer from:", from);
 
-        socket.on("user-joined", (socketId) => {
-            console.log("New User: ", socketId);
-        });
-
-        // OFFER EVENT
-        socket.on("offer", async (offer) => {
-            console.log("offer", offer);
-
-            // SETUP PEER-CONNECTION
             peerConnection.current = new RTCPeerConnection(servers);
 
+            // Create remote stream
+            remoteStream.current = new MediaStream();
             remoteVideoRef.current.srcObject = remoteStream.current;
 
+            // Add local tracks
             localStream.current.getTracks().forEach((track) => {
                 peerConnection.current.addTrack(track, localStream.current);
             });
 
+            // Receive remote tracks
             peerConnection.current.ontrack = (event) => {
                 event.streams[0].getTracks().forEach((track) => {
                     remoteStream.current.addTrack(track);
                 });
             };
 
-            // SEND ICE-CANDIDATE
+            // Send ICE candidates
             peerConnection.current.onicecandidate = (event) => {
                 if (event.candidate) {
                     socket.emit("ice-candidate", {
+                        to: from,
                         candidate: event.candidate,
-                        roomId,
                     });
                 }
             };
 
-            // STORE OFFER
-            await peerConnection.current.setRemoteDescription(
-                new RTCSessionDescription(offer),
-            );
+            await peerConnection.current.setRemoteDescription(offer);
+
             const answer = await peerConnection.current.createAnswer();
             await peerConnection.current.setLocalDescription(answer);
-            socket.emit("answer", { roomId, answer });
+
+            socket.emit("answer", {
+                to: from,
+                answer,
+            });
         });
 
-        // ANSWER EVENT
-        socket.on("answer", async (answer) => {
-            console.log("answer received");
-            await peerConnection.current.setRemoteDescription(
-                new RTCSessionDescription(answer),
-            );
+        socket.on("answer", async ({ from, answer }) => {
+            console.log("Answer received from:", from);
+
+            await peerConnection.current.setRemoteDescription(answer);
         });
 
-        socket.on("ice-candidate", async (candidate) => {
-            if (candidate && peerConnection.current) {
-                try {
-                    await peerConnection.current.addIceCandidate(
-                        new RTCIceCandidate(candidate),
-                    );
-                } catch (err) {
-                    console.error("Error adding ice candidate", err);
-                }
+        socket.on("ice-candidate", async ({ from, candidate }) => {
+            try {
+                await peerConnection.current.addIceCandidate(candidate);
+            } catch (err) {
+                console.error("ICE error:", err);
             }
         });
 
         return () => {
-            socket.off("connect");
-            socket.off("join-room");
-            socket.off("user-joined");
+            socket.off("me");
             socket.off("offer");
             socket.off("answer");
             socket.off("ice-candidate");
         };
     }, []);
 
-    // SEND OFFER
-    let createOffer = async () => {
+    const callUser = async () => {
         peerConnection.current = new RTCPeerConnection(servers);
+
+        // Create remote stream
         remoteStream.current = new MediaStream();
+        remoteVideoRef.current.srcObject = remoteStream.current;
 
-        if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream.current;
-        }
-
+        // Add local tracks
         localStream.current.getTracks().forEach((track) => {
             peerConnection.current.addTrack(track, localStream.current);
         });
 
+        // Receive remote tracks
         peerConnection.current.ontrack = (event) => {
             event.streams[0].getTracks().forEach((track) => {
                 remoteStream.current.addTrack(track);
             });
         };
 
-        remoteVideoRef.current.srcObject = remoteStream.current;
-
-        // SEND ICE-CANDIDATE
+        // Send ICE candidates
         peerConnection.current.onicecandidate = (event) => {
             if (event.candidate) {
                 socket.emit("ice-candidate", {
+                    to: callTo,
                     candidate: event.candidate,
-                    roomId,
                 });
             }
         };
 
         const offer = await peerConnection.current.createOffer();
         await peerConnection.current.setLocalDescription(offer);
-        socket.emit("offer", { roomId, offer });
+
+        socket.emit("offer", {
+            to: callTo,
+            offer,
+        });
     };
 
-    // LAYOUT
     return (
-        <>
-            <div className='bg-zinc-800 h-screen flex justify-center items-center gap-4'>
-                <video ref={myVideoRef} autoPlay muted className='w-1/2' />
-                <video ref={remoteVideoRef} autoPlay className='w-1/2' />
-                <button
-                    onClick={createOffer}
-                    className='absolute bottom-10 p-4 bg-white text-black rounded-3xl'
-                >
-                    Call to 123
-                </button>
+        <div className='h-screen flex flex-col items-center justify-center gap-4 bg-zinc-900 text-white'>
+            <h2>Your ID: {myId}</h2>
+
+            <div className='flex gap-4'>
+                <video ref={localVideoRef} autoPlay muted className='w-1/3' />
+                <video ref={remoteVideoRef} autoPlay className='w-1/3' />
             </div>
-        </>
+
+            <input
+                type='text'
+                placeholder='Enter ID to call'
+                value={callTo}
+                onChange={(e) => setCallTo(e.target.value)}
+                className='p-2 text-black'
+            />
+
+            <button
+                onClick={callUser}
+                className='bg-green-500 px-4 py-2 rounded'
+            >
+                Call
+            </button>
+        </div>
     );
 };
 

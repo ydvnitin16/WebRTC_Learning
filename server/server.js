@@ -4,34 +4,42 @@ import { createServer } from "node:http";
 
 const app = express();
 const server = createServer(app);
+
 const io = new Server(server, {
     cors: {
-        origin: "https://webrtc-test-nitin.onrender.com",
+        origin: "http://localhost:5173",
         methods: ["GET", "POST"],
     },
 });
 
 io.on("connection", (socket) => {
-    console.log("A user connected:", socket.id);
+    console.log("User connected:", socket.id);
 
-    socket.on("join-room", (roomId) => {
-        socket.join(roomId);
-        socket.to(roomId).emit("user-joined", socket.id);
+    // Send own socket id to client
+    socket.emit("me", socket.id);
+
+    // Forward offer
+    socket.on("offer", ({ to, offer }) => {
+        socket.to(to).emit("offer", {
+            from: socket.id,
+            offer,
+        });
     });
 
-    socket.on("offer", (data) => {
-        socket.to(data.roomId).emit("offer", data.offer);
-        console.log("Offer Received: ", data);
+    // Forward answer
+    socket.on("answer", ({ to, answer }) => {
+        socket.to(to).emit("answer", {
+            from: socket.id,
+            answer,
+        });
     });
 
-    socket.on("answer", (data) => {
-        socket.to(data.roomId).emit("answer", data.answer);
-        console.log("Answer Received: ", data);
-    });
-
-    socket.on("ice-candidate", (data) => {
-        console.log("Candidate Received: ", data.candidate);
-        socket.to(data.roomId).emit("ice-candidate", data.candidate);
+    // Forward ICE candidates
+    socket.on("ice-candidate", ({ to, candidate }) => {
+        socket.to(to).emit("ice-candidate", {
+            from: socket.id,
+            candidate,
+        });
     });
 
     socket.on("disconnect", () => {
@@ -39,7 +47,6 @@ io.on("connection", (socket) => {
     });
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
+server.listen(3000, () => {
+    console.log("Server running on port 3000");
 });
