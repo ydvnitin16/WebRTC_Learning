@@ -1,17 +1,17 @@
-import React from 'react';
-import io from 'socket.io-client';
-import { useRef } from 'react';
-import { useEffect } from 'react';
+import React from "react";
+import io from "socket.io-client";
+import { useRef } from "react";
+import { useEffect } from "react";
 
-const socket = io('http://localhost:3000', {
-    transports: ['websocket'], // helps avoid CORS issues
+const socket = io("http://192.168.31.59:3000", {
+    transports: ["websocket"], // helps avoid CORS issues
     secure: true,
 });
 
 const App = () => {
     let myVideoRef = useRef(null);
     let remoteVideoRef = useRef(null);
-    let roomId = '123';
+    let roomId = "123";
     let localStream = useRef(null);
     let remoteStream = useRef(new MediaStream());
     let peerConnection = useRef(null);
@@ -19,8 +19,8 @@ const App = () => {
         iceServers: [
             {
                 urls: [
-                    'stun:stun1.l.google.com:19302',
-                    'stun:stun2.l.google.com:19302',
+                    "stun:stun1.l.google.com:19302",
+                    "stun:stun2.l.google.com:19302",
                 ],
             },
         ],
@@ -42,20 +42,20 @@ const App = () => {
 
     // USE EFFECT FOR SOCKET EVENTS
     useEffect(() => {
-        socket.on('connect', () => {
-            console.log('Socket Connected');
+        socket.on("connect", () => {
+            console.log("Socket Connected");
         });
 
         // JOIN ROOM
-        socket.emit('join-room', roomId);
+        socket.emit("join-room", roomId);
 
-        socket.on('user-joined', (socketId) => {
-            console.log('New User: ', socketId);
+        socket.on("user-joined", (socketId) => {
+            console.log("New User: ", socketId);
         });
 
         // OFFER EVENT
-        socket.on('offer', async (offer) => {
-            console.log('offer', offer);
+        socket.on("offer", async (offer) => {
+            console.log("offer", offer);
 
             // SETUP PEER-CONNECTION
             peerConnection.current = new RTCPeerConnection(servers);
@@ -75,7 +75,7 @@ const App = () => {
             // SEND ICE-CANDIDATE
             peerConnection.current.onicecandidate = (event) => {
                 if (event.candidate) {
-                    socket.emit('ice-candidate', {
+                    socket.emit("ice-candidate", {
                         candidate: event.candidate,
                         roomId,
                     });
@@ -84,40 +84,40 @@ const App = () => {
 
             // STORE OFFER
             await peerConnection.current.setRemoteDescription(
-                new RTCSessionDescription(offer)
+                new RTCSessionDescription(offer),
             );
             const answer = await peerConnection.current.createAnswer();
             await peerConnection.current.setLocalDescription(answer);
-            socket.emit('answer', { roomId, answer });
+            socket.emit("answer", { roomId, answer });
         });
 
         // ANSWER EVENT
-        socket.on('answer', async (answer) => {
-            console.log('answer received');
+        socket.on("answer", async (answer) => {
+            console.log("answer received");
             await peerConnection.current.setRemoteDescription(
-                new RTCSessionDescription(answer)
+                new RTCSessionDescription(answer),
             );
         });
 
-        socket.on('ice-candidate', async (candidate) => {
+        socket.on("ice-candidate", async (candidate) => {
             if (candidate && peerConnection.current) {
                 try {
                     await peerConnection.current.addIceCandidate(
-                        new RTCIceCandidate(candidate)
+                        new RTCIceCandidate(candidate),
                     );
                 } catch (err) {
-                    console.error('Error adding ice candidate', err);
+                    console.error("Error adding ice candidate", err);
                 }
             }
         });
 
         return () => {
-            socket.off('connect');
-            socket.off('join-room');
-            socket.off('user-joined');
-            socket.off('offer');
-            socket.off('answer');
-            socket.off('ice-candidate');
+            socket.off("connect");
+            socket.off("join-room");
+            socket.off("user-joined");
+            socket.off("offer");
+            socket.off("answer");
+            socket.off("ice-candidate");
         };
     }, []);
 
@@ -140,10 +140,12 @@ const App = () => {
             });
         };
 
+        remoteVideoRef.current.srcObject = remoteStream.current;
+
         // SEND ICE-CANDIDATE
         peerConnection.current.onicecandidate = (event) => {
             if (event.candidate) {
-                socket.emit('ice-candidate', {
+                socket.emit("ice-candidate", {
                     candidate: event.candidate,
                     roomId,
                 });
@@ -152,18 +154,18 @@ const App = () => {
 
         const offer = await peerConnection.current.createOffer();
         await peerConnection.current.setLocalDescription(offer);
-        socket.emit('offer', { roomId, offer });
+        socket.emit("offer", { roomId, offer });
     };
 
     // LAYOUT
     return (
         <>
-            <div className="bg-zinc-800 h-screen flex justify-center items-center gap-4">
-                <video ref={myVideoRef} autoPlay muted className="w-1/2" />
-                <video ref={remoteVideoRef} autoPlay className="w-1/2" />
+            <div className='bg-zinc-800 h-screen flex justify-center items-center gap-4'>
+                <video ref={myVideoRef} autoPlay muted className='w-1/2' />
+                <video ref={remoteVideoRef} autoPlay className='w-1/2' />
                 <button
                     onClick={createOffer}
-                    className="absolute bottom-10 p-4 bg-white text-black rounded-3xl"
+                    className='absolute bottom-10 p-4 bg-white text-black rounded-3xl'
                 >
                     Call to 123
                 </button>
